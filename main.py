@@ -1,6 +1,7 @@
 
 import os
 import time
+import json
 import threading
 import requests
 from flask import Flask, jsonify
@@ -55,22 +56,14 @@ def health():
     })
 
 
-# این مسیر فقط یک پست عمومی ایتا را آزمایش می‌کند.
-# هیچ پیامی به روبیکا ارسال نمی‌کند.
 @app.route("/test-eitaa")
 def test_eitaa():
     try:
+        # آزمایش خواندن پست عمومی ایتا؛ هیچ پیامی به روبیکا نمی‌فرستد.
         post = Eitaa.get_message("s3math56", "1503")
 
-        if post is None:
-            return jsonify({
-                "ok": False,
-                "error": "No post data returned"
-            }), 502
-
-        # تبدیل نتیجه به متن، برای جلوگیری از خطای JSON
         return app.response_class(
-            response=__import__("json").dumps(
+            response=json.dumps(
                 {"ok": True, "post": post},
                 ensure_ascii=False,
                 default=str
@@ -105,14 +98,13 @@ def run_bot():
 
             result = call_api("getUpdates", payload)
             data = result.get("data") or result
-
             updates = data.get("updates") or []
             next_offset = data.get("next_offset_id")
 
             if next_offset:
                 offset_id = str(next_offset)
 
-            # در اولین دریافت، پیام‌های قبلی پردازش نمی‌شوند.
+            # پیام‌های قبلی در اولین دریافت پردازش نمی‌شوند.
             if not initialized:
                 initialized = True
                 print(
@@ -159,7 +151,6 @@ def run_bot():
                 else:
                     continue
 
-                # ثبت شناسه پیش از ارسال پاسخ
                 processed_ids.add(key)
 
                 call_api("sendMessage", {
