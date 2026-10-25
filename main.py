@@ -4,6 +4,7 @@ import time
 import threading
 import requests
 from flask import Flask, jsonify
+from eitaa import Eitaa
 
 app = Flask(__name__)
 
@@ -28,6 +29,9 @@ def call_api(method, payload=None):
     response.raise_for_status()
     result = response.json()
 
+    if not isinstance(result, dict):
+        raise RuntimeError("Invalid Rubika API response")
+
     if result.get("status") == "ERROR":
         raise RuntimeError(f"Rubika API error in {method}")
 
@@ -51,6 +55,38 @@ def health():
     })
 
 
+# این مسیر فقط یک پست عمومی ایتا را آزمایش می‌کند.
+# هیچ پیامی به روبیکا ارسال نمی‌کند.
+@app.route("/test-eitaa")
+def test_eitaa():
+    try:
+        post = Eitaa.get_message("s3math56", "1503")
+
+        if post is None:
+            return jsonify({
+                "ok": False,
+                "error": "No post data returned"
+            }), 502
+
+        # تبدیل نتیجه به متن، برای جلوگیری از خطای JSON
+        return app.response_class(
+            response=__import__("json").dumps(
+                {"ok": True, "post": post},
+                ensure_ascii=False,
+                default=str
+            ),
+            status=200,
+            mimetype="application/json"
+        )
+
+    except Exception as error:
+        app.logger.exception("Eitaa test failed")
+        return jsonify({
+            "ok": False,
+            "error": str(error)[:500]
+        }), 502
+
+
 def run_bot():
     global bot_thread_started
     bot_thread_started = True
@@ -63,18 +99,20 @@ def run_bot():
     while not stop_event.is_set():
         try:
             payload = {"limit": 10}
+
             if offset_id:
                 payload["offset_id"] = offset_id
 
             result = call_api("getUpdates", payload)
             data = result.get("data") or result
+
             updates = data.get("updates") or []
             next_offset = data.get("next_offset_id")
 
             if next_offset:
-                offset_id = next_offset
+                offset_id = str(next_offset)
 
-            # اولین دریافت فقط برای عبور از پیام‌های قبلی است
+            # در اولین دریافت، پیام‌های قبلی پردازش نمی‌شوند.
             if not initialized:
                 initialized = True
                 print(
@@ -85,10 +123,16 @@ def run_bot():
                 continue
 
             for update in updates:
+                if not isinstance(update, dict):
+                    continue
+
                 if update.get("type") != "NewMessage":
                     continue
 
                 message = update.get("new_message") or {}
+                if not isinstance(message, dict):
+                    continue
+
                 chat_id = update.get("chat_id")
                 message_id = message.get("message_id")
                 text = (message.get("text") or "").strip()
@@ -101,7 +145,6 @@ def run_bot():
                 if key in processed_ids:
                     continue
 
-                # فقط فرمان‌های شناخته‌شده را پردازش کن
                 if text == "/start":
                     reply = (
                         "سلام! ربات فعال است ✅\n"
@@ -116,7 +159,7 @@ def run_bot():
                 else:
                     continue
 
-                # پیش از ارسال پاسخ، شناسه را ثبت کن
+                # ثبت شناسه پیش از ارسال پاسخ
                 processed_ids.add(key)
 
                 call_api("sendMessage", {
@@ -126,17 +169,13 @@ def run_bot():
 
                 print("Reply sent once", flush=True)
 
-            # محدود کردن مصرف حافظه
             if len(processed_ids) > 2000:
                 processed_ids.clear()
 
             time.sleep(2)
 
-        except Exception as error:
-            print(
-                f"Polling error: {type(error).__name__}: {error}",
-                flush=True
-            )
+        except Exception:
+            app.logger.exception("Rubika polling error")
             time.sleep(10)
 
 
