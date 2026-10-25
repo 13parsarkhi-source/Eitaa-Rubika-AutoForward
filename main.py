@@ -59,9 +59,7 @@ def health():
 @app.route("/test-eitaa")
 def test_eitaa():
     try:
-        # آزمایش خواندن پست عمومی ایتا؛ هیچ پیامی به روبیکا نمی‌فرستد.
         post = Eitaa.get_message("s3math56", 1503)
-
         return app.response_class(
             response=json.dumps(
                 {"ok": True, "post": post},
@@ -71,9 +69,54 @@ def test_eitaa():
             status=200,
             mimetype="application/json"
         )
-
     except Exception as error:
         app.logger.exception("Eitaa test failed")
+        return jsonify({
+            "ok": False,
+            "error": str(error)[:500]
+        }), 502
+
+
+@app.route("/test-latest")
+def test_latest():
+    try:
+        messages = Eitaa.get_latest_messages("s3math56")
+
+        if not isinstance(messages, list):
+            return jsonify({
+                "ok": False,
+                "error": "Unexpected result type",
+                "result_type": type(messages).__name__
+            }), 502
+
+        summary = []
+
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+
+            image_link = message.get("image_link") or ""
+
+            summary.append({
+                "message_number": message.get("message_number"),
+                "text": message.get("text", ""),
+                "has_image_link": bool(image_link),
+                "image_link": image_link,
+                "time": message.get("iso_time", message.get("time")),
+            })
+
+        return app.response_class(
+            response=json.dumps({
+                "ok": True,
+                "count": len(summary),
+                "messages": summary
+            }, ensure_ascii=False, default=str),
+            status=200,
+            mimetype="application/json"
+        )
+
+    except Exception as error:
+        app.logger.exception("Latest Eitaa test failed")
         return jsonify({
             "ok": False,
             "error": str(error)[:500]
@@ -104,7 +147,6 @@ def run_bot():
             if next_offset:
                 offset_id = str(next_offset)
 
-            # پیام‌های قبلی در اولین دریافت پردازش نمی‌شوند.
             if not initialized:
                 initialized = True
                 print(
