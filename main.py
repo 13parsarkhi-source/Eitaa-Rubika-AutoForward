@@ -60,7 +60,7 @@ def health():
 def test_eitaa():
     try:
         # آزمایش خواندن پست عمومی ایتا؛ هیچ پیامی به روبیکا نمی‌فرستد.
-        post = Eitaa.get_message("s3math56", "1503")
+        post = Eitaa.get_message("s3math56", 1503)
 
         return app.response_class(
             response=json.dumps(
